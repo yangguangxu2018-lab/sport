@@ -22,6 +22,32 @@
 
     <section class="summary-grid" id="weekSummary" aria-live="polite"></section>
 
+    <section class="settings-panel">
+      <div class="settings-head">
+        <div>
+          <p class="eyebrow">账号设置</p>
+          <h2 class="settings-title">修改自己的密码</h2>
+          <p class="subtext">修改后，下次登录请使用新密码。</p>
+        </div>
+      </div>
+      <section class="status" id="passwordStatus"></section>
+      <form class="password-form" id="passwordForm">
+        <label>
+          当前密码
+          <input type="password" name="currentPassword" autocomplete="current-password" required>
+        </label>
+        <label>
+          新密码
+          <input type="password" name="newPassword" minlength="4" autocomplete="new-password" required>
+        </label>
+        <label>
+          确认新密码
+          <input type="password" name="confirmPassword" minlength="4" autocomplete="new-password" required>
+        </label>
+        <button type="submit">修改密码</button>
+      </form>
+    </section>
+
     <section class="admin-panel" id="sportAdminSection" hidden>
       <div class="admin-panel-head">
         <div>
@@ -92,6 +118,6 @@
     <section class="records" id="records" aria-live="polite"></section>
   </main>
 
-  <script src="/records.js?v=20260504-4"></script>
+  <script src="/records.js?v=20260505-1"></script>
 </body>
 </html>

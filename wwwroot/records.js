@@ -5,6 +5,8 @@ const sportFilter = document.querySelector("#sportFilter");
 const weekSummaryBox = document.querySelector("#weekSummary");
 const sessionGreeting = document.querySelector("#sessionGreeting");
 const logoutButton = document.querySelector("#logoutButton");
+const passwordForm = document.querySelector("#passwordForm");
+const passwordStatusBox = document.querySelector("#passwordStatus");
 const userFilterWrap = document.querySelector("#userFilterWrap");
 const userSelect = filters.elements.user;
 const sportAdminSection = document.querySelector("#sportAdminSection");
@@ -32,6 +34,11 @@ function setStatus(message, kind = "") {
 function setSportAdminStatus(message, kind = "") {
   sportAdminStatusBox.textContent = message;
   sportAdminStatusBox.className = `status ${kind}`.trim();
+}
+
+function setPasswordStatus(message, kind = "") {
+  passwordStatusBox.textContent = message;
+  passwordStatusBox.className = `status ${kind}`.trim();
 }
 
 function formatAverage(value) {
@@ -269,6 +276,40 @@ logoutButton.addEventListener("click", async () => {
   }
 });
 
+passwordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const button = passwordForm.querySelector("button");
+  const formData = new FormData(passwordForm);
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (newPassword !== confirmPassword) {
+    setPasswordStatus("两次输入的新密码不一致。", "error");
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "修改中";
+
+  try {
+    const data = await fetchJson("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+
+    passwordForm.reset();
+    setPasswordStatus(data.message || "密码修改成功。", "ok");
+  } catch (error) {
+    setPasswordStatus(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "修改密码";
+  }
+});
+
 filters.addEventListener("submit", (event) => {
   event.preventDefault();
   loadRecords();
@@ -370,6 +411,7 @@ sportAdminList.addEventListener("submit", async (event) => {
 (async () => {
   try {
     await ensureSession();
+    setPasswordStatus("");
     await loadSports();
     if (session.isAdmin) {
       await loadAdminSports();

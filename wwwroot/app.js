@@ -4,6 +4,8 @@ const sessionGreeting = document.querySelector("#sessionGreeting");
 const sessionChip = document.querySelector("#sessionChip");
 const scoreboardBox = document.querySelector("#scoreboard");
 const logoutButton = document.querySelector("#logoutButton");
+const passwordForm = document.querySelector("#passwordForm");
+const passwordStatusBox = document.querySelector("#passwordStatus");
 
 let session = null;
 
@@ -14,6 +16,11 @@ function redirectToLogin() {
 function setStatus(message, kind = "") {
   statusBox.textContent = message;
   statusBox.className = `status ${kind}`.trim();
+}
+
+function setPasswordStatus(message, kind = "") {
+  passwordStatusBox.textContent = message;
+  passwordStatusBox.className = `status ${kind}`.trim();
 }
 
 function formatGoal(task) {
@@ -158,6 +165,40 @@ logoutButton.addEventListener("click", async () => {
   }
 });
 
+passwordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const button = passwordForm.querySelector("button");
+  const formData = new FormData(passwordForm);
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (newPassword !== confirmPassword) {
+    setPasswordStatus("两次输入的新密码不一致。", "error");
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "修改中";
+
+  try {
+    const data = await fetchJson("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+
+    passwordForm.reset();
+    setPasswordStatus(data.message || "密码修改成功。", "ok");
+  } catch (error) {
+    setPasswordStatus(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "修改密码";
+  }
+});
+
 taskList.addEventListener("submit", async (event) => {
   event.preventDefault();
 
@@ -193,6 +234,7 @@ taskList.addEventListener("submit", async (event) => {
   try {
     const ready = await ensureSession();
     if (ready) {
+      setPasswordStatus("");
       await loadScoreboard();
       await loadTasks();
     }

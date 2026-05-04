@@ -90,7 +90,7 @@ app.MapPost("/api/auth/login", async (HttpContext context, LoginRequest request)
         return Results.BadRequest(new { message = "请输入用户名和密码。" });
     }
 
-    var account = AppData.Authenticate(request.Username, request.Password);
+    var account = AppData.Authenticate(connectionString, request.Username, request.Password);
     if (account is null)
     {
         return Results.BadRequest(new { message = "用户名或密码不正确。" });
@@ -122,13 +122,47 @@ app.MapPost("/api/auth/logout", async (HttpContext context) =>
 
 app.MapGet("/api/auth/me", (ClaimsPrincipal principal) =>
 {
-    var account = AppData.GetAccount(principal);
+    var account = AppData.GetAccount(connectionString, principal);
     return account is null ? Results.Unauthorized() : Results.Ok(AppData.ToSession(account));
 });
 
+app.MapPost("/api/auth/change-password", (ClaimsPrincipal principal, ChangePasswordRequest request) =>
+{
+    var account = AppData.GetRequiredAccount(connectionString, principal);
+
+    if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+    {
+        return Results.BadRequest(new { message = "请输入当前密码。" });
+    }
+
+    if (!string.Equals(account.Password, request.CurrentPassword, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { message = "当前密码不正确。" });
+    }
+
+    var newPassword = request.NewPassword?.Trim() ?? string.Empty;
+    if (string.IsNullOrWhiteSpace(newPassword))
+    {
+        return Results.BadRequest(new { message = "请输入新密码。" });
+    }
+
+    if (newPassword.Length < 4)
+    {
+        return Results.BadRequest(new { message = "新密码至少需要 4 位。" });
+    }
+
+    if (string.Equals(account.Password, newPassword, StringComparison.Ordinal))
+    {
+        return Results.BadRequest(new { message = "新密码不能和当前密码相同。" });
+    }
+
+    Database.UpdateAccountPassword(connectionString, account.Username, newPassword);
+    return Results.Ok(new { message = "密码修改成功。" });
+}).RequireAuthorization();
+
 app.MapGet("/api/tasks/today", (ClaimsPrincipal principal) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsUser)
     {
         return Results.Forbid();
@@ -145,14 +179,14 @@ app.MapGet("/api/tasks/today", (ClaimsPrincipal principal) =>
 
 app.MapGet("/api/home-scoreboard", (ClaimsPrincipal principal) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsUser)
     {
         return Results.Forbid();
     }
 
     var today = DateOnly.FromDateTime(DateTime.Now);
-    var summaries = AppData.Users
+    var summaries = AppData.GetUserDisplayNames(connectionString)
         .Select(userName => new HomeScoreSummaryDto(
             userName,
             Database.GetWeeklySummary(connectionString, today, userName, null)))
@@ -165,7 +199,7 @@ app.MapGet("/api/home-scoreboard", (ClaimsPrincipal principal) =>
 
 app.MapGet("/api/admin/sports", (ClaimsPrincipal principal) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsAdmin)
     {
         return Results.Forbid();
@@ -176,7 +210,7 @@ app.MapGet("/api/admin/sports", (ClaimsPrincipal principal) =>
 
 app.MapPost("/api/admin/sports", (ClaimsPrincipal principal, SportDefinitionEditorRequest request) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsAdmin)
     {
         return Results.Forbid();
@@ -200,7 +234,7 @@ app.MapPost("/api/admin/sports", (ClaimsPrincipal principal, SportDefinitionEdit
 
 app.MapPut("/api/admin/sports/{sportId:long}", (ClaimsPrincipal principal, long sportId, SportDefinitionEditorRequest request) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsAdmin)
     {
         return Results.Forbid();
@@ -226,7 +260,7 @@ app.MapPut("/api/admin/sports/{sportId:long}", (ClaimsPrincipal principal, long 
 
 app.MapPost("/api/records", (ClaimsPrincipal principal, SubmitRecordRequest request) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsUser)
     {
         return Results.Forbid();
@@ -259,9 +293,9 @@ app.MapGet("/api/records", (
     [FromQuery(Name = "user")] string? userFilter,
     string? sport) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
 
-    if (!string.IsNullOrWhiteSpace(userFilter) && !AppData.Users.Contains(userFilter))
+    if (!string.IsNullOrWhiteSpace(userFilter) && !AppData.GetUserDisplayNames(connectionString).Contains(userFilter))
     {
         return Results.BadRequest(new { message = "用户筛选条件不正确。" });
     }
@@ -286,7 +320,7 @@ app.MapGet("/api/records", (
 
 app.MapPost("/api/records/{recordId:long}/score", (ClaimsPrincipal principal, long recordId, ScoreRecordRequest request) =>
 {
-    var account = AppData.GetRequiredAccount(principal);
+    var account = AppData.GetRequiredAccount(connectionString, principal);
     if (!account.IsAdmin)
     {
         return Results.Forbid();
@@ -364,18 +398,13 @@ public static class AppRoles
 
 public static class AppData
 {
-    public static readonly AppAccount[] Accounts =
+    public static readonly AppAccount[] SeedAccounts =
     {
         new("yihong", "yihong", "哥哥", AppRoles.User),
         new("yichen", "yichen", "弟弟", AppRoles.User),
         new("ygx", "00134", "ygx", AppRoles.Admin),
         new("cby", "00134", "cby", AppRoles.Admin)
     };
-
-    public static readonly string[] Users = Accounts
-        .Where(account => account.IsUser)
-        .Select(account => account.DisplayName)
-        .ToArray();
 
     public static readonly SportDefinition[] SeedSports =
     {
@@ -392,21 +421,25 @@ public static class AppData
         new("椭圆仪", TargetKind.TimeMinutes, 10, 30)
     };
 
-    public static AppAccount? Authenticate(string username, string password) =>
-        Accounts.FirstOrDefault(account =>
-            account.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
-            account.Password == password);
+    public static AppAccount? Authenticate(string connectionString, string username, string password) =>
+        Database.GetAccountByCredentials(connectionString, username, password);
 
-    public static AppAccount? GetAccount(ClaimsPrincipal principal)
+    public static AppAccount? GetAccount(string connectionString, ClaimsPrincipal principal)
     {
         var username = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         return string.IsNullOrWhiteSpace(username)
             ? null
-            : Accounts.FirstOrDefault(account => account.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+            : Database.GetAccountByUsername(connectionString, username);
     }
 
-    public static AppAccount GetRequiredAccount(ClaimsPrincipal principal) =>
-        GetAccount(principal) ?? throw new InvalidOperationException("当前登录信息无效。");
+    public static AppAccount GetRequiredAccount(string connectionString, ClaimsPrincipal principal) =>
+        GetAccount(connectionString, principal) ?? throw new InvalidOperationException("当前登录信息无效。");
+
+    public static IReadOnlyList<string> GetUserDisplayNames(string connectionString) =>
+        Database.GetAccounts(connectionString)
+            .Where(account => account.IsUser)
+            .Select(account => account.DisplayName)
+            .ToArray();
 
     public static UserSessionDto ToSession(AppAccount account) =>
         new(account.Username, account.DisplayName, account.Role, account.IsAdmin);
@@ -443,6 +476,8 @@ public record SportDefinition(long Id, string Name, TargetKind Kind, int MinTarg
 public record UserSessionDto(string Username, string DisplayName, string Role, bool IsAdmin);
 
 public record LoginRequest(string Username, string Password);
+
+public record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
 public record SubmitRecordRequest(long TaskId, int ActualValue);
 
@@ -539,6 +574,14 @@ public static class Database
                 CreatedAt TEXT NOT NULL,
                 UpdatedAt TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS Accounts (
+                Username TEXT PRIMARY KEY,
+                Password TEXT NOT NULL,
+                DisplayName TEXT NOT NULL,
+                Role TEXT NOT NULL,
+                UpdatedAt TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
 
@@ -562,6 +605,61 @@ public static class Database
         migration.ExecuteNonQuery();
 
         SeedSports(connection);
+        SeedAccounts(connection);
+    }
+
+    public static IReadOnlyList<AppAccount> GetAccounts(string connectionString)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+        return GetAccounts(connection);
+    }
+
+    public static AppAccount? GetAccountByUsername(string connectionString, string username)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+        return GetAccountByUsername(connection, username);
+    }
+
+    public static AppAccount? GetAccountByCredentials(string connectionString, string username, string password)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Username, Password, DisplayName, Role
+            FROM Accounts
+            WHERE lower(Username) = lower($username)
+              AND Password = $password
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$username", username);
+        command.Parameters.AddWithValue("$password", password);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadAccount(reader) : null;
+    }
+
+    public static void UpdateAccountPassword(string connectionString, string username, string newPassword)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE Accounts
+            SET Password = $password,
+                UpdatedAt = $updatedAt
+            WHERE lower(Username) = lower($username);
+            """;
+        command.Parameters.AddWithValue("$password", newPassword);
+        command.Parameters.AddWithValue("$updatedAt", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        command.Parameters.AddWithValue("$username", username);
+        command.ExecuteNonQuery();
     }
 
     public static IReadOnlyList<DailyTaskDto> GetOrCreateDailyTasks(string connectionString, DateOnly date, string user)
@@ -993,6 +1091,42 @@ public static class Database
         return reader.Read() ? ReadSport(reader) : null;
     }
 
+    private static AppAccount? GetAccountByUsername(SqliteConnection connection, string username)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Username, Password, DisplayName, Role
+            FROM Accounts
+            WHERE lower(Username) = lower($username)
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$username", username);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadAccount(reader) : null;
+    }
+
+    private static IReadOnlyList<AppAccount> GetAccounts(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Username, Password, DisplayName, Role
+            FROM Accounts
+            ORDER BY Username;
+            """;
+
+        var accounts = new List<AppAccount>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            accounts.Add(ReadAccount(reader));
+        }
+
+        return accounts;
+    }
+
     private static IReadOnlyList<SportDefinition> GetSports(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
@@ -1065,6 +1199,13 @@ public static class Database
             reader.GetInt32(3),
             reader.GetInt32(4));
 
+    private static AppAccount ReadAccount(SqliteDataReader reader) =>
+        new(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3));
+
     private static void SeedSports(SqliteConnection connection)
     {
         using var countCommand = connection.CreateCommand();
@@ -1092,6 +1233,31 @@ public static class Database
             insert.Parameters.AddWithValue("$minTarget", sport.MinTarget);
             insert.Parameters.AddWithValue("$maxTarget", sport.MaxTarget);
             insert.Parameters.AddWithValue("$createdAt", now);
+            insert.Parameters.AddWithValue("$updatedAt", now);
+            insert.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    private static void SeedAccounts(SqliteConnection connection)
+    {
+        var now = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        using var transaction = connection.BeginTransaction();
+
+        foreach (var account in AppData.SeedAccounts)
+        {
+            using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText =
+                """
+                INSERT OR IGNORE INTO Accounts (Username, Password, DisplayName, Role, UpdatedAt)
+                VALUES ($username, $password, $displayName, $role, $updatedAt);
+                """;
+            insert.Parameters.AddWithValue("$username", account.Username);
+            insert.Parameters.AddWithValue("$password", account.Password);
+            insert.Parameters.AddWithValue("$displayName", account.DisplayName);
+            insert.Parameters.AddWithValue("$role", account.Role);
             insert.Parameters.AddWithValue("$updatedAt", now);
             insert.ExecuteNonQuery();
         }
