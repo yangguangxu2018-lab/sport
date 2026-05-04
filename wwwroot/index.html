@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>今日运动</title>
+  <link rel="stylesheet" href="/styles.css?v=20260504-4">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">今日运动</p>
+        <h1>今天随机一次，做完就记下来</h1>
+        <p class="subtext" id="sessionGreeting">正在确认登录状态...</p>
+      </div>
+      <div class="header-actions">
+        <a class="link-button secondary" href="/records.html">查看记录</a>
+        <button class="ghost-button" id="logoutButton" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <section class="session-chip" id="sessionChip" aria-live="polite"></section>
+
+    <section class="summary-grid home-scoreboard" id="scoreboard" aria-live="polite"></section>
+
+    <section class="status" id="status">正在读取今日运动...</section>
+
+    <section class="task-list" id="taskList" aria-live="polite"></section>
+  </main>
+
+  <script src="/app.js?v=20260504-2"></script>
+</body>
+</html>

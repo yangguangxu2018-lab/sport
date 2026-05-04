@@ -1,0 +1,12 @@
+bin/
+obj/
+sport.db
+publish/
+*.zip
+.vs/
+.vscode/
+.claude/
+*.user
+.DS_Store
+
+.fake
