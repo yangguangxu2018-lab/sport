@@ -1,0 +1,37 @@
+{
+  "name": "sport",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-9.0-bookworm",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-dotnettools.csdevkit"
+      ],
+      "settings": {
+        "dotnet.defaultSolution": "SportTracker.sln",
+        "files.exclude": {
+          "**/.git": true,
+          "**/.DS_Store": true,
+          "**/bin": true,
+          "**/obj": true
+        }
+      }
+    }
+  },
+  "forwardPorts": [
+    7335
+  ],
+  "portsAttributes": {
+    "7335": {
+      "label": "SportTracker",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "postCreateCommand": "dotnet restore SportTracker.sln",
+  "postAttachCommand": {
+    "server": "dotnet watch run --project SportTracker.csproj --launch-profile SportTracker --no-restore"
+  },
+  "remoteEnv": {
+    "ASPNETCORE_ENVIRONMENT": "Development"
+  }
+}
