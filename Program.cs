@@ -62,11 +62,19 @@ app.Use(async (context, next) =>
 {
     var path = context.Request.Path.Value ?? string.Empty;
     var isAuthenticated = context.User.Identity?.IsAuthenticated == true;
-    var isProtectedPage = path is "/" or "/index.html" or "/records.html";
+    var isProtectedPage = path is "/" or "/index.html" or "/records.html" or "/sports.html";
 
     if (!isAuthenticated && isProtectedPage)
     {
         context.Response.Redirect("/login.html");
+        return;
+    }
+
+    if (isAuthenticated &&
+        path.Equals("/sports.html", StringComparison.OrdinalIgnoreCase) &&
+        !context.User.IsInRole(AppRoles.Admin))
+    {
+        context.Response.Redirect("/records.html");
         return;
     }
 
@@ -291,7 +299,8 @@ app.MapGet("/api/records", (
     ClaimsPrincipal principal,
     DateOnly? date,
     [FromQuery(Name = "user")] string? userFilter,
-    string? sport) =>
+    string? sport,
+    string? reviewStatus) =>
 {
     var account = AppData.GetRequiredAccount(connectionString, principal);
 
@@ -305,10 +314,17 @@ app.MapGet("/api/records", (
         return Results.BadRequest(new { message = "项目筛选条件不正确。" });
     }
 
+    var parsedReviewStatus = ParseReviewStatus(reviewStatus);
+    if (!string.IsNullOrWhiteSpace(reviewStatus) && parsedReviewStatus is null)
+    {
+        return Results.BadRequest(new { message = "审核状态筛选条件不正确。" });
+    }
+
     var scopedUser = account.IsAdmin ? userFilter : account.DisplayName;
     var today = DateOnly.FromDateTime(DateTime.Now);
 
-    var records = Database.SearchRecords(connectionString, date, scopedUser, sport);
+    var scopedReviewStatus = account.IsAdmin ? parsedReviewStatus : null;
+    var records = Database.SearchRecords(connectionString, date, scopedUser, sport, scopedReviewStatus);
     var weeklySummary = Database.GetWeeklySummary(connectionString, today, scopedUser, sport);
 
     return Results.Ok(new RecordSearchResponse(
@@ -331,7 +347,7 @@ app.MapPost("/api/records/{recordId:long}/score", (ClaimsPrincipal principal, lo
         return Results.BadRequest(new { message = "评分必须在 0 到 10 分之间。" });
     }
 
-    var record = Database.UpdateRecordScore(connectionString, recordId, request.Score, account.Username);
+    var record = Database.UpdateRecordScore(connectionString, recordId, request.Score, account.DisplayName);
     return record is null
         ? Results.NotFound(new { message = "没有找到要评分的记录。" })
         : Results.Ok(record);
@@ -389,6 +405,15 @@ static string? ValidateSportDefinition(SportDefinitionEditorRequest request)
 
     return null;
 }
+
+static RecordReviewStatus? ParseReviewStatus(string? reviewStatus) =>
+    reviewStatus?.Trim().ToLowerInvariant() switch
+    {
+        null or "" => null,
+        "reviewed" => RecordReviewStatus.Reviewed,
+        "pending" => RecordReviewStatus.Pending,
+        _ => null
+    };
 
 public static class AppRoles
 {
@@ -515,7 +540,9 @@ public record DailyTaskDto(
     long? RecordId,
     int? ActualValue,
     string? SubmittedAt,
-    int? Score);
+    int? Score,
+    string? ScoredBy,
+    string? ScoredAt);
 
 public record SportRecordDto(
     long Id,
@@ -531,6 +558,12 @@ public record SportRecordDto(
     int? Score,
     string? ScoredBy,
     string? ScoredAt);
+
+public enum RecordReviewStatus
+{
+    Reviewed,
+    Pending
+}
 
 public static class Database
 {
@@ -969,7 +1002,7 @@ public static class Database
         return Convert.ToInt32(command.ExecuteScalar() ?? 0) == 1;
     }
 
-    public static IReadOnlyList<SportRecordDto> SearchRecords(string connectionString, DateOnly? date, string? user, string? sport)
+    public static IReadOnlyList<SportRecordDto> SearchRecords(string connectionString, DateOnly? date, string? user, string? sport, RecordReviewStatus? reviewStatus)
     {
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
@@ -983,11 +1016,17 @@ public static class Database
             WHERE ($date IS NULL OR COALESCE(TaskDate, substr(SubmittedAt, 1, 10)) = $date)
               AND ($user IS NULL OR UserName = $user)
               AND ($sport IS NULL OR SportName = $sport)
-            ORDER BY COALESCE(TaskDate, substr(SubmittedAt, 1, 10)) DESC, SubmittedAt DESC, Id DESC;
+              AND (
+                    $reviewStatus IS NULL
+                 OR ($reviewStatus = 'Reviewed' AND Score IS NOT NULL)
+                 OR ($reviewStatus = 'Pending' AND Score IS NULL)
+              )
+            ORDER BY SubmittedAt DESC, Id DESC;
             """;
         command.Parameters.AddWithValue("$date", date is null ? (object)DBNull.Value : date.Value.ToString("yyyy-MM-dd"));
         command.Parameters.AddWithValue("$user", string.IsNullOrWhiteSpace(user) ? (object)DBNull.Value : user);
         command.Parameters.AddWithValue("$sport", string.IsNullOrWhiteSpace(sport) ? (object)DBNull.Value : sport);
+        command.Parameters.AddWithValue("$reviewStatus", reviewStatus is null ? (object)DBNull.Value : reviewStatus.ToString());
 
         var records = new List<SportRecordDto>();
         using var reader = command.ExecuteReader();
@@ -1039,7 +1078,7 @@ public static class Database
         command.CommandText =
             """
             SELECT t.Id, t.Date, t.UserName, t.SportName, t.TargetKind, t.Unit, t.TargetValue,
-                   r.Id, r.ActualValue, r.SubmittedAt, r.Score
+                   r.Id, r.ActualValue, r.SubmittedAt, r.Score, r.ScoredBy, r.ScoredAt
             FROM DailyTasks t
             LEFT JOIN SportRecords r ON r.DailyTaskId = t.Id
             WHERE t.Date = $date AND t.UserName = $userName
@@ -1159,6 +1198,8 @@ public static class Database
             null,
             null,
             null,
+            null,
+            null,
             null);
 
     private static DailyTaskDto ReadDailyTask(SqliteDataReader reader) =>
@@ -1173,7 +1214,9 @@ public static class Database
             reader.IsDBNull(7) ? null : reader.GetInt64(7),
             reader.IsDBNull(8) ? null : reader.GetInt32(8),
             reader.IsDBNull(9) ? null : reader.GetString(9),
-            reader.IsDBNull(10) ? null : reader.GetInt32(10));
+            reader.IsDBNull(10) ? null : reader.GetInt32(10),
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12));
 
     private static SportRecordDto ReadRecord(SqliteDataReader reader) =>
         new(

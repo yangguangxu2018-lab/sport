@@ -103,6 +103,12 @@ async function ensureSession() {
 
 function renderTask(task) {
   if (task.recordId) {
+    const scoreMeta = task.score === null
+      ? "等待管理员评分"
+      : task.scoredBy
+        ? `评分 ${task.score} 分 · ${task.scoredBy} 评分`
+        : `评分 ${task.score} 分`;
+
     return `
       <article class="task-card task-card-done">
         <div class="task-main">
@@ -117,7 +123,7 @@ function renderTask(task) {
         </div>
         <div class="submitted-note">
           <span>${task.submittedAt}</span>
-          <span>${task.score === null ? "等待管理员评分" : `评分 ${task.score} 分`}</span>
+          <span>${scoreMeta}</span>
         </div>
       </article>
     `;

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>运动项目管理</title>
+  <link rel="stylesheet" href="/styles.css?v=20260510-1">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">项目管理</p>
+        <h1>管理员维护运动项目</h1>
+        <p class="subtext" id="sessionGreeting">正在确认登录状态...</p>
+      </div>
+      <div class="header-actions">
+        <a class="link-button secondary" href="/records.html">审核记录</a>
+        <button class="ghost-button" id="logoutButton" type="button">退出登录</button>
+      </div>
+    </header>
+
+    <section class="settings-panel">
+      <div class="settings-head">
+        <div>
+          <p class="eyebrow">账号设置</p>
+          <h2 class="settings-title">修改自己的密码</h2>
+          <p class="subtext">修改后，下次登录请使用新密码。</p>
+        </div>
+      </div>
+      <section class="status" id="passwordStatus"></section>
+      <form class="password-form" id="passwordForm">
+        <label>
+          当前密码
+          <input type="password" name="currentPassword" autocomplete="current-password" required>
+        </label>
+        <label>
+          新密码
+          <input type="password" name="newPassword" minlength="4" autocomplete="new-password" required>
+        </label>
+        <label>
+          确认新密码
+          <input type="password" name="confirmPassword" minlength="4" autocomplete="new-password" required>
+        </label>
+        <button type="submit">修改密码</button>
+      </form>
+    </section>
+
+    <section class="admin-panel">
+      <div class="admin-panel-head">
+        <div>
+          <p class="eyebrow">运动项目</p>
+          <h2 class="admin-title">新增和修改每天随机抽取的项目</h2>
+          <p class="subtext">这里设置项目名称、单位类型和每天随机目标范围。修改后会影响之后随机生成的任务。</p>
+        </div>
+      </div>
+
+      <section class="status" id="sportAdminStatus">正在读取运动项目...</section>
+
+      <form class="sport-editor sport-editor-create" id="createSportForm">
+        <div class="sport-editor-grid">
+          <label>
+            项目名称
+            <input type="text" name="name" placeholder="例如：深蹲" required>
+          </label>
+          <label>
+            类型
+            <select name="kind">
+              <option value="Count">次数</option>
+              <option value="TimeMinutes">分钟</option>
+              <option value="TimeSeconds">秒</option>
+            </select>
+          </label>
+          <label>
+            最小随机值
+            <input type="number" name="minTarget" min="1" step="1" required>
+          </label>
+          <label>
+            最大随机值
+            <input type="number" name="maxTarget" min="1" step="1" required>
+          </label>
+        </div>
+        <div class="sport-editor-actions">
+          <span class="meta-note">新增后会加入之后每天的随机抽取。</span>
+          <button type="submit">新增项目</button>
+        </div>
+      </form>
+
+      <section class="sport-admin-list" id="sportAdminList" aria-live="polite"></section>
+    </section>
+  </main>
+
+  <script src="/sports.js?v=20260510-1"></script>
+</body>
+</html>

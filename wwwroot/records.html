@@ -4,17 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>运动记录</title>
-  <link rel="stylesheet" href="/styles.css?v=20260504-4">
+  <link rel="stylesheet" href="/styles.css?v=20260510-1">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
-        <p class="eyebrow">历史记录</p>
-        <h1>本周总分和历史记录</h1>
+        <p class="eyebrow" id="pageEyebrow">历史记录</p>
+        <h1 id="pageTitle">本周总分和历史记录</h1>
         <p class="subtext" id="sessionGreeting">正在确认登录状态...</p>
       </div>
       <div class="header-actions">
+        <a class="link-button secondary" href="/sports.html" id="sportAdminLink" hidden>运动项目管理</a>
         <a class="link-button secondary" href="/">返回主页</a>
         <button class="ghost-button" id="logoutButton" type="button">退出登录</button>
       </div>
@@ -48,49 +49,6 @@
       </form>
     </section>
 
-    <section class="admin-panel" id="sportAdminSection" hidden>
-      <div class="admin-panel-head">
-        <div>
-          <p class="eyebrow">项目管理</p>
-          <h2 class="admin-title">管理员可以新增和修改运动项目</h2>
-          <p class="subtext">这里设置项目名称、单位类型和每天随机目标范围。修改后会影响之后随机生成的任务。</p>
-        </div>
-      </div>
-
-      <section class="status" id="sportAdminStatus">正在读取运动项目...</section>
-
-      <form class="sport-editor sport-editor-create" id="createSportForm">
-        <div class="sport-editor-grid">
-          <label>
-            项目名称
-            <input type="text" name="name" placeholder="例如：深蹲" required>
-          </label>
-          <label>
-            类型
-            <select name="kind">
-              <option value="Count">次数</option>
-              <option value="TimeMinutes">分钟</option>
-              <option value="TimeSeconds">秒</option>
-            </select>
-          </label>
-          <label>
-            最小随机值
-            <input type="number" name="minTarget" min="1" step="1" required>
-          </label>
-          <label>
-            最大随机值
-            <input type="number" name="maxTarget" min="1" step="1" required>
-          </label>
-        </div>
-        <div class="sport-editor-actions">
-          <span class="meta-note">新增后会加入之后每天的随机抽取。</span>
-          <button type="submit">新增项目</button>
-        </div>
-      </form>
-
-      <section class="sport-admin-list" id="sportAdminList" aria-live="polite"></section>
-    </section>
-
     <form class="filters" id="filters">
       <label>
         日期
@@ -110,6 +68,14 @@
           <option value="">全部</option>
         </select>
       </label>
+      <label id="reviewStatusWrap" hidden>
+        审核状态
+        <select name="reviewStatus">
+          <option value="">全部</option>
+          <option value="pending">未审核</option>
+          <option value="reviewed">已审核</option>
+        </select>
+      </label>
       <button type="submit">筛选</button>
     </form>
 
@@ -118,6 +84,6 @@
     <section class="records" id="records" aria-live="polite"></section>
   </main>
 
-  <script src="/records.js?v=20260505-1"></script>
+  <script src="/records.js?v=20260510-1"></script>
 </body>
 </html>

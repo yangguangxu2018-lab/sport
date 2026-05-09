@@ -8,19 +8,13 @@ const logoutButton = document.querySelector("#logoutButton");
 const passwordForm = document.querySelector("#passwordForm");
 const passwordStatusBox = document.querySelector("#passwordStatus");
 const userFilterWrap = document.querySelector("#userFilterWrap");
+const reviewStatusWrap = document.querySelector("#reviewStatusWrap");
+const sportAdminLink = document.querySelector("#sportAdminLink");
+const pageEyebrow = document.querySelector("#pageEyebrow");
+const pageTitle = document.querySelector("#pageTitle");
 const userSelect = filters.elements.user;
-const sportAdminSection = document.querySelector("#sportAdminSection");
-const sportAdminStatusBox = document.querySelector("#sportAdminStatus");
-const sportAdminList = document.querySelector("#sportAdminList");
-const createSportForm = document.querySelector("#createSportForm");
 
 let session = null;
-
-const kindLabels = {
-  Count: "次数",
-  TimeMinutes: "分钟",
-  TimeSeconds: "秒"
-};
 
 function redirectToLogin() {
   window.location.replace("/login.html");
@@ -31,11 +25,6 @@ function setStatus(message, kind = "") {
   statusBox.className = `status ${kind}`.trim();
 }
 
-function setSportAdminStatus(message, kind = "") {
-  sportAdminStatusBox.textContent = message;
-  sportAdminStatusBox.className = `status ${kind}`.trim();
-}
-
 function setPasswordStatus(message, kind = "") {
   passwordStatusBox.textContent = message;
   passwordStatusBox.className = `status ${kind}`.trim();
@@ -43,16 +32,6 @@ function setPasswordStatus(message, kind = "") {
 
 function formatAverage(value) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;"
-  }[char]));
 }
 
 function renderWeeklySummary(summary) {
@@ -70,41 +49,6 @@ function renderWeeklySummary(summary) {
       <strong>${summary.startDate} 至 ${summary.endDate}</strong>
       <span>已过 ${summary.daysElapsed} 天</span>
     </article>
-  `;
-}
-
-function renderKindOptions(selectedKind) {
-  return Object.entries(kindLabels)
-    .map(([value, label]) => `<option value="${value}" ${selectedKind === value ? "selected" : ""}>${label}</option>`)
-    .join("");
-}
-
-function renderSportEditor(sport) {
-  return `
-    <form class="sport-editor sport-editor-update" data-sport-id="${sport.id}">
-      <div class="sport-editor-grid">
-        <label>
-          项目名称
-          <input type="text" name="name" value="${escapeHtml(sport.name)}" required>
-        </label>
-        <label>
-          类型
-          <select name="kind">${renderKindOptions(sport.kind)}</select>
-        </label>
-        <label>
-          最小随机值
-          <input type="number" name="minTarget" min="1" step="1" value="${sport.minTarget}" required>
-        </label>
-        <label>
-          最大随机值
-          <input type="number" name="maxTarget" min="1" step="1" value="${sport.maxTarget}" required>
-        </label>
-      </div>
-      <div class="sport-editor-actions">
-        <span class="meta-note">当前单位：${sport.unit}，随机范围 ${sport.minTarget} - ${sport.maxTarget}</span>
-        <button type="submit">保存项目</button>
-      </div>
-    </form>
   `;
 }
 
@@ -127,15 +71,21 @@ async function fetchJson(url, options = {}) {
 async function ensureSession() {
   session = await fetchJson("/api/auth/me");
   sessionGreeting.textContent = session.isAdmin
-    ? `管理员 ${session.displayName} 已登录，可以查看、评分，也可以修改运动项目。`
+    ? `管理员 ${session.displayName} 已登录，可以按最新提交时间审核运行记录。`
     : `${session.displayName} 已登录，只显示自己的历史记录。`;
 
   if (!session.isAdmin) {
     userFilterWrap.hidden = true;
     userSelect.value = session.displayName;
-    sportAdminSection.hidden = true;
+    reviewStatusWrap.hidden = true;
+    sportAdminLink.hidden = true;
+    pageEyebrow.textContent = "历史记录";
+    pageTitle.textContent = "本周总分和历史记录";
   } else {
-    sportAdminSection.hidden = false;
+    reviewStatusWrap.hidden = false;
+    sportAdminLink.hidden = false;
+    pageEyebrow.textContent = "记录审核";
+    pageTitle.textContent = "按时间倒序审核运行记录";
   }
 }
 
@@ -186,7 +136,7 @@ function renderScoreEditor(record) {
 function renderRecord(record) {
   const scoreText = record.score === null ? "未评分" : `${record.score} 分`;
   const scoredMeta = record.scoredBy
-    ? `<span>评分人 ${record.scoredBy}</span><span>${record.scoredAt}</span>`
+    ? `<span>管理员 ${record.scoredBy} 评分</span><span>${record.scoredAt}</span>`
     : `<span>等待管理员评分</span>`;
 
   return `
@@ -211,33 +161,6 @@ function renderRecord(record) {
   `;
 }
 
-function readSportPayload(form) {
-  const formData = new FormData(form);
-  return {
-    name: String(formData.get("name") || "").trim(),
-    kind: String(formData.get("kind") || "Count"),
-    minTarget: Number(formData.get("minTarget")),
-    maxTarget: Number(formData.get("maxTarget"))
-  };
-}
-
-async function loadAdminSports() {
-  if (!session.isAdmin) {
-    return;
-  }
-
-  setSportAdminStatus("正在读取运动项目...");
-  sportAdminList.innerHTML = "";
-
-  try {
-    const sports = await fetchJson("/api/admin/sports");
-    setSportAdminStatus(`共 ${sports.length} 个可随机使用的运动项目。`, "ok");
-    sportAdminList.innerHTML = sports.map(renderSportEditor).join("");
-  } catch (error) {
-    setSportAdminStatus(error.message, "error");
-  }
-}
-
 async function loadRecords() {
   setStatus("正在读取记录...");
   recordsBox.innerHTML = "";
@@ -245,25 +168,21 @@ async function loadRecords() {
   try {
     const params = buildParams();
     const data = await fetchJson(`/api/records?${params.toString()}`);
+    const orderedRecords = [...data.records].sort((left, right) =>
+      right.submittedAt.localeCompare(left.submittedAt) || right.id - left.id);
 
     renderWeeklySummary(data.weeklySummary);
 
-    if (data.records.length === 0) {
+    if (orderedRecords.length === 0) {
       setStatus("还没有符合条件的记录。");
       return;
     }
 
-    setStatus(`共 ${data.records.length} 条记录。`);
-    recordsBox.innerHTML = data.records.map(renderRecord).join("");
+    setStatus(`共 ${orderedRecords.length} 条记录，已按提交时间倒序排列。`);
+    recordsBox.innerHTML = orderedRecords.map(renderRecord).join("");
   } catch (error) {
     setStatus(error.message, "error");
   }
-}
-
-async function refreshAdminData() {
-  await loadSports();
-  await loadAdminSports();
-  await loadRecords();
 }
 
 logoutButton.addEventListener("click", async () => {
@@ -348,74 +267,11 @@ recordsBox.addEventListener("submit", async (event) => {
   }
 });
 
-createSportForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-
-  const button = createSportForm.querySelector("button");
-  const payload = readSportPayload(createSportForm);
-
-  button.disabled = true;
-  button.textContent = "新增中";
-
-  try {
-    await fetchJson("/api/admin/sports", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    createSportForm.reset();
-    createSportForm.elements.kind.value = "Count";
-    setSportAdminStatus("运动项目已新增。", "ok");
-    await refreshAdminData();
-  } catch (error) {
-    setSportAdminStatus(error.message, "error");
-  } finally {
-    button.disabled = false;
-    button.textContent = "新增项目";
-  }
-});
-
-sportAdminList.addEventListener("submit", async (event) => {
-  const form = event.target;
-  if (!form.classList.contains("sport-editor-update")) {
-    return;
-  }
-
-  event.preventDefault();
-
-  const button = form.querySelector("button");
-  const payload = readSportPayload(form);
-  const sportId = Number(form.dataset.sportId);
-
-  button.disabled = true;
-  button.textContent = "保存中";
-
-  try {
-    await fetchJson(`/api/admin/sports/${sportId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    setSportAdminStatus("运动项目已更新。", "ok");
-    await refreshAdminData();
-  } catch (error) {
-    setSportAdminStatus(error.message, "error");
-  } finally {
-    button.disabled = false;
-    button.textContent = "保存项目";
-  }
-});
-
 (async () => {
   try {
     await ensureSession();
     setPasswordStatus("");
     await loadSports();
-    if (session.isAdmin) {
-      await loadAdminSports();
-    }
     await loadRecords();
   } catch (error) {
     setStatus(error.message, "error");
